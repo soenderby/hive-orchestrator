@@ -1,0 +1,3 @@
+# Ignore all worktrees (they're git worktrees, not regular files)
+*
+!.gitignore
