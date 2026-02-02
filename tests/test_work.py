@@ -67,20 +67,20 @@ def test_get_next_task_error(mock_run):
 
 @patch("hive.commands.work.run_command")
 def test_claim_task_success(mock_run):
-    """Test successfully claiming a task."""
+    """Test successfully claiming a task using atomic --claim flag."""
     mock_run.return_value = MagicMock(returncode=0)
 
     result = claim_task("hive-123", "worker-1")
     assert result is True
     mock_run.assert_called_once_with(
-        ["bd", "update", "hive-123", "--status", "in_progress", "--notes", "Claimed by worker-1"],
+        ["bd", "update", "hive-123", "--claim"],
         check=False,
     )
 
 
 @patch("hive.commands.work.run_command")
 def test_claim_task_failure(mock_run):
-    """Test claiming a task when it fails (race condition)."""
+    """Test claiming a task when it fails (already claimed or not planned)."""
     mock_run.return_value = MagicMock(returncode=1)
 
     result = claim_task("hive-123", "worker-1")

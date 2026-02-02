@@ -55,9 +55,15 @@ def get_next_task() -> Optional[dict]:
 
 
 def claim_task(task_id: str, worker_id: str) -> bool:
-    """Atomically claim a task by setting it to in_progress."""
+    """Atomically claim a task using compare-and-swap semantics.
+
+    Uses bd update --claim which:
+    - Atomically sets assignee and status=in_progress
+    - Fails if task is already claimed or not in planned state
+    - Provides true compare-and-swap guarantees for parallel safety
+    """
     result = run_command(
-        ["bd", "update", task_id, "--status", "in_progress", "--notes", f"Claimed by {worker_id}"],
+        ["bd", "update", task_id, "--claim"],
         check=False,
     )
     return result.returncode == 0
