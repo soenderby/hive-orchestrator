@@ -1,7 +1,7 @@
 """Main CLI entry point for Hive."""
 
 import click
-from hive.commands import init, plan
+from hive.commands import init, plan, work
 
 
 @click.group()
@@ -13,6 +13,7 @@ def main():
 
 main.add_command(init.init_cmd)
 main.add_command(plan.plan_cmd)
+main.add_command(work.work_cmd)
 
 
 if __name__ == "__main__":
