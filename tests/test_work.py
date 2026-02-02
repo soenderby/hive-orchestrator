@@ -267,6 +267,68 @@ def test_ralph_loop_claim_race_condition(mock_manager, mock_sleep, mock_claim, m
     mock_sleep.assert_called_once_with(1)
 
 
+@patch("hive.commands.work.get_next_task")
+@patch("hive.commands.work.claim_task")
+@patch("hive.commands.work.get_task_status")
+@patch("hive.commands.work.check_tmux_activity")
+@patch("hive.commands.work.tmux_session_exists")
+@patch("hive.commands.work.kill_tmux_session")
+@patch("hive.commands.work.run_command")
+@patch("hive.commands.work.time.sleep")
+@patch("hive.commands.work.generate_claude_context_from_beads")
+@patch("hive.commands.work.WorktreeManager")
+def test_ralph_loop_spawn_failure_detection(
+    mock_manager,
+    mock_context,
+    mock_sleep,
+    mock_run,
+    mock_kill,
+    mock_exists,
+    mock_activity,
+    mock_status,
+    mock_claim,
+    mock_get_task,
+    tmp_path,
+):
+    """Test that spawn failure detection marks task as failed when no activity detected."""
+    # Setup task
+    mock_get_task.return_value = {"id": "hive-123", "title": "Test task"}
+    mock_claim.return_value = True
+
+    # Setup worktree manager
+    mock_manager.worktree_exists.return_value = False
+    mock_manager.create_worktree.return_value = tmp_path / "worktree"
+
+    # Setup context generation
+    mock_context.return_value = "context"
+
+    # Spawn grace period check - no activity detected
+    mock_status.return_value = "in_progress"  # Status unchanged
+    mock_activity.return_value = False  # No tmux activity
+    mock_exists.return_value = False  # Session died
+
+    result = ralph_loop_iteration("worker-1", mock_manager, spawn_grace=1)
+
+    # Should continue looping after spawn failure
+    assert result is True
+
+    # Should have marked task as failed with spawn failure reason
+    spawn_failed_calls = [
+        call for call in mock_run.call_args_list
+        if len(call[0]) > 0 and call[0][0] == ["bd", "update", "hive-123", "--status", "failed", "--notes"]
+    ]
+
+    # Find the bd update call with failed status
+    failed_update_calls = [
+        call for call in mock_run.call_args_list
+        if len(call[0]) > 0 and "bd" in call[0][0] and "update" in call[0][0] and "hive-123" in call[0][0]
+    ]
+
+    # Verify that the task was marked as failed
+    assert any("failed" in str(call) for call in failed_update_calls), "Task should be marked as failed"
+    assert any("agent_spawn_failed" in str(call) for call in failed_update_calls), "Should include agent_spawn_failed reason"
+
+
 # Note: More complex integration tests for ralph_loop_iteration are omitted
 # to avoid test hangs. The unit tests above cover the core functionality.
 # Integration testing should be done manually or with a real test environment.
