@@ -142,6 +142,55 @@ def test_task_add_with_type(mock_run):
 
 
 @patch("hive.commands.task.subprocess.run")
+def test_task_add_with_discovered_from(mock_run):
+    """Test task add with discovered-from relationship."""
+    mock_run.return_value = MagicMock(returncode=0)
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["task", "add", "Follow-up task", "--discovered-from", "hive-123"])
+
+    assert result.exit_code == 0
+    mock_run.assert_called_once()
+    args = mock_run.call_args[0][0]
+    assert args == [
+        "bd",
+        "create",
+        "--title", "Follow-up task",
+        "--type", "task",
+        "--priority", "2",
+        "--notes", "Created via hive task add (discovered work)",
+        "--deps", "discovered-from:hive-123",
+    ]
+
+
+@patch("hive.commands.task.subprocess.run")
+def test_task_add_with_all_options(mock_run):
+    """Test task add with all options combined."""
+    mock_run.return_value = MagicMock(returncode=0)
+    runner = CliRunner()
+
+    result = runner.invoke(main, [
+        "task", "add", "Complex task",
+        "--priority", "1",
+        "--type", "bug",
+        "--discovered-from", "hive-abc",
+    ])
+
+    assert result.exit_code == 0
+    mock_run.assert_called_once()
+    args = mock_run.call_args[0][0]
+    assert args == [
+        "bd",
+        "create",
+        "--title", "Complex task",
+        "--type", "bug",
+        "--priority", "1",
+        "--notes", "Created via hive task add (discovered work)",
+        "--deps", "discovered-from:hive-abc",
+    ]
+
+
+@patch("hive.commands.task.subprocess.run")
 def test_task_command_passes_through_exit_code(mock_run):
     """Test that non-zero exit codes are passed through."""
     mock_run.return_value = MagicMock(returncode=1)

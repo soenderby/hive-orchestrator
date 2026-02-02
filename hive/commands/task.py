@@ -58,7 +58,8 @@ def show_cmd(task_id, output_json):
 @click.argument("description")
 @click.option("--priority", type=int, default=2, help="Priority (0-4, default: 2)")
 @click.option("--type", "task_type", default="task", help="Task type (default: task)")
-def add_cmd(description, priority, task_type):
+@click.option("--discovered-from", default=None, help="Parent task ID this discovery is related to")
+def add_cmd(description, priority, task_type, discovered_from):
     """Add a new task for discovered work (wraps bd create)."""
     args = [
         "create",
@@ -67,6 +68,8 @@ def add_cmd(description, priority, task_type):
         "--priority", str(priority),
         "--notes", "Created via hive task add (discovered work)",
     ]
+    if discovered_from:
+        args.extend(["--deps", f"discovered-from:{discovered_from}"])
     run_bd_command(args)
 
 
