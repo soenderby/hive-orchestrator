@@ -10,7 +10,8 @@ import click
 @click.argument("goal", required=False)
 @click.option("--show", is_flag=True, help="Display the current plan")
 @click.option("--approve", is_flag=True, help="Approve the current plan for execution")
-def plan_cmd(goal, show, approve):
+@click.option("--continue", "continue_task", is_flag=True, help="Continue from a too_big task")
+def plan_cmd(goal, show, approve, continue_task):
     """Interactive planning session for task breakdown.
 
     GOAL: Description of what you want to accomplish
@@ -41,6 +42,57 @@ def plan_cmd(goal, show, approve):
             content = f.read()
         click.echo(content)
         return
+
+    # Handle --continue flag (for too_big task decomposition)
+    if continue_task:
+        import subprocess
+        import json
+
+        # Find the most recent too_big task
+        try:
+            result = subprocess.run(
+                ["bd", "list", "--status=too_big", "--json"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            tasks = json.loads(result.stdout)
+
+            if not tasks:
+                click.echo("✗ No tasks marked as too_big")
+                click.echo("  Use 'bd update <id> --status too_big' or 'hive task too-big <id>' first")
+                sys.exit(1)
+
+            # Get the most recent too_big task
+            task = tasks[0]
+            task_id = task.get("id", "")
+            task_title = task.get("title", "")
+
+            click.echo(f"Continuing from task: {task_id} - {task_title}")
+            click.echo("─────────────────────────────────────────────")
+            click.echo("")
+            click.echo("This task was marked as too big to complete in one go.")
+            click.echo("Break it down into smaller subtasks using the workflow below:")
+            click.echo("")
+            click.echo("1. Create subtasks:")
+            click.echo(f"   bd create --title=\"Subtask 1\" --type=task --priority=1")
+            click.echo(f"   bd create --title=\"Subtask 2\" --type=task --priority=1")
+            click.echo("")
+            click.echo("2. Add dependencies if needed:")
+            click.echo("   bd dep add <subtask-2-id> <subtask-1-id>")
+            click.echo("")
+            click.echo("3. Close the original too_big task:")
+            click.echo(f"   bd close {task_id} --reason=\"Decomposed into subtasks\"")
+            click.echo("")
+            click.echo("4. Review ready tasks:")
+            click.echo("   bd ready")
+            click.echo("")
+
+            return
+
+        except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
+            click.echo(f"✗ Error finding too_big tasks: {e}")
+            sys.exit(1)
 
     # Handle --approve flag
     if approve:

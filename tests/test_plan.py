@@ -146,3 +146,64 @@ def test_plan_requires_goal_argument(tmp_path):
         result = runner.invoke(main, ["plan"])
         assert result.exit_code == 1
         assert "Error: Missing GOAL argument" in result.output
+
+
+def test_plan_continue_with_too_big_task(tmp_path):
+    """Test that hive plan --continue handles too_big tasks."""
+    from unittest.mock import patch, MagicMock
+    import json
+
+    runner = CliRunner()
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        # Initialize
+        Path(".beads").mkdir()
+        runner.invoke(main, ["init"])
+
+        # Mock bd list command to return a too_big task
+        mock_tasks = [
+            {
+                "id": "hive-123",
+                "title": "Big task that needs decomposition",
+                "status": "too_big"
+            }
+        ]
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=json.dumps(mock_tasks)
+            )
+
+            # Run plan --continue
+            result = runner.invoke(main, ["plan", "--continue"])
+            assert result.exit_code == 0
+            assert "hive-123" in result.output
+            assert "Big task that needs decomposition" in result.output
+            assert "Create subtasks" in result.output
+            assert "bd close hive-123" in result.output
+
+
+def test_plan_continue_without_too_big_tasks(tmp_path):
+    """Test that hive plan --continue fails when no too_big tasks exist."""
+    from unittest.mock import patch, MagicMock
+    import json
+
+    runner = CliRunner()
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        # Initialize
+        Path(".beads").mkdir()
+        runner.invoke(main, ["init"])
+
+        # Mock bd list command to return empty list
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout=json.dumps([])
+            )
+
+            # Run plan --continue
+            result = runner.invoke(main, ["plan", "--continue"])
+            assert result.exit_code == 1
+            assert "No tasks marked as too_big" in result.output

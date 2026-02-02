@@ -163,3 +163,17 @@ def test_task_help():
     assert "list" in result.output
     assert "show" in result.output
     assert "add" in result.output
+
+
+@patch("hive.commands.task.subprocess.run")
+def test_task_too_big_basic(mock_run):
+    """Test basic task too-big command."""
+    mock_run.return_value = MagicMock(returncode=0)
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["task", "too-big", "hive-123"])
+
+    assert result.exit_code == 0
+    mock_run.assert_called_once()
+    args = mock_run.call_args[0][0]
+    assert args == ["bd", "update", "hive-123", "--status", "too_big"]

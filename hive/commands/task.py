@@ -68,3 +68,11 @@ def add_cmd(description, priority, task_type):
         "--notes", "Created via hive task add (discovered work)",
     ]
     run_bd_command(args)
+
+
+@task_cmd.command(name="too-big")
+@click.argument("task_id")
+def too_big_cmd(task_id):
+    """Mark a task as too big for decomposition (wraps bd update --status too_big)."""
+    args = ["update", task_id, "--status", "too_big"]
+    run_bd_command(args)
