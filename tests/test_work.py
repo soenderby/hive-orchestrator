@@ -32,16 +32,17 @@ def test_log_formats_correctly(capsys):
 
 @patch("hive.commands.work.run_command")
 def test_get_next_task_success(mock_run):
-    """Test getting next task from Beads."""
+    """Test getting next task from Beads with no dependencies."""
     mock_run.return_value = MagicMock(
         returncode=0,
-        stdout=json.dumps([{"id": "hive-123", "title": "Test task"}]),
+        stdout=json.dumps([{"id": "hive-123", "title": "Test task", "dependency_count": 0}]),
     )
 
     task = get_next_task()
     assert task is not None
     assert task["id"] == "hive-123"
     assert task["title"] == "Test task"
+    mock_run.assert_called_once_with(["bd", "list", "--ready", "--json"], check=False)
 
 
 @patch("hive.commands.work.run_command")
@@ -63,6 +64,100 @@ def test_get_next_task_error(mock_run):
 
     task = get_next_task()
     assert task is None
+
+
+@patch("hive.commands.work.run_command")
+def test_get_next_task_with_closed_dependencies(mock_run):
+    """Test getting task where all dependencies are closed."""
+    # First call: bd list --ready returns task with dependencies
+    # Second call: bd show returns full task with closed dependencies
+    mock_run.side_effect = [
+        MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"id": "hive-123", "title": "Test task", "dependency_count": 1}]),
+        ),
+        MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        "id": "hive-123",
+                        "title": "Test task",
+                        "dependencies": [{"id": "hive-111", "status": "closed"}],
+                    }
+                ]
+            ),
+        ),
+    ]
+
+    task = get_next_task()
+    assert task is not None
+    assert task["id"] == "hive-123"
+    assert mock_run.call_count == 2
+    mock_run.assert_any_call(["bd", "list", "--ready", "--json"], check=False)
+    mock_run.assert_any_call(["bd", "show", "hive-123", "--json"], check=False)
+
+
+@patch("hive.commands.work.run_command")
+def test_get_next_task_with_open_dependencies(mock_run):
+    """Test that tasks with open dependencies are skipped."""
+    # First call: bd list --ready returns two tasks
+    # Second call: bd show for first task shows open dependency
+    # Third call: bd show for second task shows no dependencies
+    mock_run.side_effect = [
+        MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {"id": "hive-123", "title": "Blocked task", "dependency_count": 1},
+                    {"id": "hive-456", "title": "Ready task", "dependency_count": 0},
+                ]
+            ),
+        ),
+        MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        "id": "hive-123",
+                        "title": "Blocked task",
+                        "dependencies": [{"id": "hive-111", "status": "open"}],
+                    }
+                ]
+            ),
+        ),
+    ]
+
+    task = get_next_task()
+    assert task is not None
+    assert task["id"] == "hive-456"  # Should return second task, not blocked one
+    assert task["title"] == "Ready task"
+
+
+@patch("hive.commands.work.run_command")
+def test_get_next_task_with_in_progress_dependencies(mock_run):
+    """Test that tasks with in_progress dependencies are skipped."""
+    mock_run.side_effect = [
+        MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"id": "hive-123", "title": "Test task", "dependency_count": 1}]),
+        ),
+        MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        "id": "hive-123",
+                        "title": "Test task",
+                        "dependencies": [{"id": "hive-111", "status": "in_progress"}],
+                    }
+                ]
+            ),
+        ),
+    ]
+
+    task = get_next_task()
+    assert task is None  # Should return None as only task has in_progress dependency
 
 
 @patch("hive.commands.work.run_command")

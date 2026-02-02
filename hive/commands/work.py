@@ -39,15 +39,50 @@ def log(worker_id: str, message: str):
 
 
 def get_next_task() -> Optional[dict]:
-    """Get the next ready task from Beads."""
-    result = run_command(["bd", "ready", "--json"], check=False)
+    """Get the next ready task from Beads.
+
+    Only returns tasks where all dependencies are closed (done AND merged).
+    """
+    result = run_command(["bd", "list", "--ready", "--json"], check=False)
     if result.returncode != 0:
         return None
 
     try:
         tasks = json.loads(result.stdout)
-        if tasks and len(tasks) > 0:
-            return tasks[0]
+        if not tasks:
+            return None
+
+        # Filter tasks to only those with all dependencies closed
+        for task in tasks:
+            # If no dependencies, task is ready
+            if task.get("dependency_count", 0) == 0:
+                return task
+
+            # Has dependencies - need to check if all are closed
+            task_id = task.get("id")
+            if not task_id:
+                continue
+
+            # Get full task details with dependency status
+            show_result = run_command(["bd", "show", task_id, "--json"], check=False)
+            if show_result.returncode != 0:
+                continue
+
+            try:
+                task_details = json.loads(show_result.stdout)
+                if not task_details or len(task_details) == 0:
+                    continue
+
+                task_detail = task_details[0]
+                dependencies = task_detail.get("dependencies", [])
+
+                # Check if all dependencies are closed
+                all_closed = all(dep.get("status") == "closed" for dep in dependencies)
+                if all_closed:
+                    return task
+            except (json.JSONDecodeError, KeyError):
+                continue
+
     except (json.JSONDecodeError, KeyError):
         pass
 
