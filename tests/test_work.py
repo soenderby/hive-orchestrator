@@ -188,11 +188,11 @@ def test_get_task_status(mock_run):
     """Test getting task status."""
     mock_run.return_value = MagicMock(
         returncode=0,
-        stdout=json.dumps({"id": "hive-123", "status": "done"}),
+        stdout=json.dumps({"id": "hive-123", "status": "closed"}),
     )
 
     status = get_task_status("hive-123")
-    assert status == "done"
+    assert status == "closed"
 
 
 @patch("hive.commands.work.run_command")

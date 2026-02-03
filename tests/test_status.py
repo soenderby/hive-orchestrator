@@ -122,8 +122,8 @@ def test_status_shows_task_statistics(tmp_path):
         mock_tasks = [
             {"id": "task-1", "status": "open", "title": "Task 1"},
             {"id": "task-2", "status": "in_progress", "title": "Task 2"},
-            {"id": "task-3", "status": "done", "title": "Task 3"},
-            {"id": "task-4", "status": "done", "title": "Task 4"},
+            {"id": "task-3", "status": "closed", "title": "Task 3"},
+            {"id": "task-4", "status": "closed", "title": "Task 4"},
             {"id": "task-5", "status": "blocked", "title": "Task 5"},
         ]
 
@@ -138,7 +138,7 @@ def test_status_shows_task_statistics(tmp_path):
             assert "Total: 5" in result.output
             assert "Open: 1" in result.output
             assert "In Progress: 1" in result.output
-            assert "Done: 2" in result.output
+            assert "Closed: 2" in result.output
             assert "Blocked: 1" in result.output
             assert "Overall Progress: 2/5 (40.0%)" in result.output
     finally:
@@ -171,7 +171,7 @@ def test_status_json_output(tmp_path):
 
         mock_tasks = [
             {"id": "task-1", "status": "open", "title": "Task 1"},
-            {"id": "task-2", "status": "done", "title": "Task 2"},
+            {"id": "task-2", "status": "closed", "title": "Task 2"},
         ]
 
         with patch("subprocess.run") as mock_run:
@@ -189,7 +189,7 @@ def test_status_json_output(tmp_path):
             assert output_data["workers"][0]["id"] == "worker-1"
             assert output_data["total_tasks"] == 2
             assert output_data["task_counts"]["open"] == 1
-            assert output_data["task_counts"]["done"] == 1
+            assert output_data["task_counts"]["closed"] == 1
     finally:
         os.chdir(original_dir)
 
