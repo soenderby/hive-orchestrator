@@ -58,16 +58,16 @@ These are deliberately excluded to keep the system small, inspectable, and relia
 All task states are **lowercase** and must be used consistently by humans, agents, and scripts:
 
 ```
-planned → in_progress → done
+open → in_progress → closed
                 ↓
         blocked | too_big | failed
 ```
 
 | State | Meaning |
 |-------|---------|
-| `planned` | Task exists, not started |
+| `open` | Task exists, not started |
 | `in_progress` | Worker is executing |
-| `done` | Completed and merged |
+| `closed` | Completed and merged |
 | `blocked` | Waiting on dependency or human |
 | `too_big` | Needs decomposition |
 | `failed` | Error, needs human review |
@@ -76,11 +76,11 @@ planned → in_progress → done
 
 A task **must be atomically claimed** before execution.
 
-**Invariant:** A task may only transition from `planned → in_progress` once.
+**Invariant:** A task may only transition from `open → in_progress` once.
 
 This is guaranteed by one of the following (implementation choice):
 
-- `bd update` fails if the current status is not `planned`, **or**
+- `bd update` fails if the current status is not `open`, **or**
 - A dedicated `bd claim <task_id> --worker <id>` operation with compare-and-swap semantics
 
 All worker loops rely on this invariant for correctness under parallel execution.
@@ -399,7 +399,7 @@ hive work --parallel 2
         ┌──────────┼──────────┬───────────┘
         │          │          │
         ▼          ▼          ▼
-      done      too_big   blocked/failed
+     closed    too_big   blocked/failed
         │          │          │
         ▼          │          │
 ┌──────────────┐   │          │
@@ -675,7 +675,7 @@ CONTEXT_EOF
         CURRENT_STATUS=$(bd show "$TASK_ID" --json | jq -r '.status')
 
         case "$CURRENT_STATUS" in
-            done)
+            closed)
                 log "Task completed successfully"
                 OUTCOME="done"
                 break
@@ -769,7 +769,7 @@ done
 **How parallel workers coordinate:**
 - Each worker claims tasks via atomic `bd update` (or `bd claim`)
 - If a task is already `in_progress`, the claim fails and worker retries
-- Blocked tasks (via `blocked-by`) wait until their dependencies are `done` AND merged
+- Blocked tasks (via `blocked-by`) wait until their dependencies are `closed` AND merged
 
 **Conflict avoidance:**
 - Planning phase should identify tasks that might conflict
@@ -830,9 +830,9 @@ Worker-2:          [waiting: blocked-by A] ─────► [Task B starts]
 
 | Task Result | Action |
 |-------------|--------|
-| done, clean merge | Merge to main, cleanup worktree |
-| done, merge conflict | Abort merge, mark `blocked`, preserve worktree |
-| done, tests fail (if enabled) | Mark `failed`, cleanup worktree |
+| closed, clean merge | Merge to main, cleanup worktree |
+| closed, merge conflict | Abort merge, mark `blocked`, preserve worktree |
+| closed, tests fail (if enabled) | Mark `failed`, cleanup worktree |
 | too_big | No merge, cleanup worktree, human decomposes |
 | blocked | No merge, preserve worktree for inspection |
 | failed/timeout | No merge, cleanup worktree |
@@ -852,7 +852,7 @@ git checkout main
 git merge task-hv-abc
 # resolve conflicts
 git commit
-bd update hv-abc --status done
+bd update hv-abc --status closed
 cd ../..
 hive cleanup worker-1-hv-abc
 ```
@@ -1103,7 +1103,7 @@ $ hive status
 ┌─────────────────────────────────────────┐
 │ HIVE STATUS: myproject                  │
 ├─────────────────────────────────────────┤
-│ Tasks: 5 done, 0 active, 0 blocked      │
+│ Tasks: 5 closed, 0 active, 0 blocked    │
 │ Workers: 0 active                       │
 │ All work complete!                      │
 └─────────────────────────────────────────┘
@@ -1180,7 +1180,7 @@ $ hive status
 ┌─────────────────────────────────────────┐
 │ HIVE STATUS: myproject                  │
 ├─────────────────────────────────────────┤
-│ Tasks: 3 done, 0 active, 1 blocked      │
+│ Tasks: 3 closed, 0 active, 1 blocked    │
 │                                         │
 │ Blocked tasks:                          │
 │ - hv-abc: Merge conflict (branch saved) │
@@ -1195,7 +1195,7 @@ $ git checkout main
 $ git merge task-hv-abc
 # ... resolve conflicts ...
 $ git add -A && git commit
-$ bd update hv-abc --status done
+$ bd update hv-abc --status closed
 $ cd ../..
 $ hive cleanup worker-1-hv-abc
 ```

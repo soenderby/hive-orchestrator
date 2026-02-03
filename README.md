@@ -137,7 +137,7 @@ Each worker iteration:
 7. Poll Beads for completion (checks every `--poll-interval`)
 8. Kill tmux session
 9. Handle outcome:
-   - **done** → Merge to main, cleanup worktree
+   - **closed** → Merge to main, cleanup worktree
    - **too_big** → Cleanup, human decomposes
    - **blocked** → Preserve worktree for inspection
    - **failed/timeout** → Cleanup worktree
@@ -165,7 +165,7 @@ hive status --json
 
 **Shows:**
 - Active workers and their current tasks
-- Task statistics by status (open, in_progress, done, blocked, too_big, failed)
+- Task statistics by status (open, in_progress, closed, blocked, too_big, failed)
 - Overall progress percentage
 
 ### Task Management
@@ -311,9 +311,9 @@ shell = "bash"                    # Shell to use
 
 Tasks flow through these states:
 
-1. **planned** - Ready to be claimed by a worker
+1. **open** - Ready to be claimed by a worker
 2. **in_progress** - Currently being worked on
-3. **done** - Completed successfully
+3. **closed** - Completed successfully
 4. **blocked** - Blocked by dependencies or conflicts
 5. **too_big** - Needs to be decomposed into smaller tasks
 6. **failed** - Failed to complete
@@ -321,14 +321,14 @@ Tasks flow through these states:
 **State Transitions:**
 
 ```
-planned → in_progress → done
-       ↓             ↓
-     failed      too_big
-                    ↓
-                blocked
+open → in_progress → closed
+    ↓             ↓
+  failed      too_big
+                 ↓
+             blocked
 ```
 
-**Important:** A task may only transition from `planned → in_progress` once (atomic claim guarantee).
+**Important:** A task may only transition from `open → in_progress` once (atomic claim guarantee).
 
 ## Merge Policy
 
@@ -337,7 +337,7 @@ After a task completes successfully:
 1. **Automatic merge to main** (if no conflicts)
    - Worker merges task branch
    - Removes worktree
-   - Task marked as done
+   - Task marked as closed
 
 2. **Merge conflict** (if conflicts detected)
    - Worker marks task as `blocked`
@@ -393,7 +393,7 @@ bd close hive-abc
 **How parallel workers coordinate:**
 - Each worker claims tasks via atomic `bd update --claim`
 - If a task is already `in_progress`, the claim fails and worker retries
-- Blocked tasks wait until their dependencies are `done` AND merged
+- Blocked tasks wait until their dependencies are `closed` AND merged
 - Each worker operates in isolated worktree
 
 **Conflict avoidance:**
@@ -611,14 +611,14 @@ hive work
 **Symptom:** `hive work` exits immediately with "No tasks remaining"
 
 **Causes:**
-- No tasks in `planned` state
+- No tasks in `open` state
 - All tasks are blocked by dependencies
 
 **Solution:**
 
 ```bash
 bd ready  # Check what's available
-bd list --status=planned  # See planned tasks
+bd list --status=open  # See open tasks
 bd show <task-id>  # Check dependencies
 ```
 
