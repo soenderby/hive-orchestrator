@@ -3,6 +3,7 @@
 Provides typed configuration dataclass and loading from .hive/config.toml.
 """
 
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -92,3 +93,50 @@ def load_config(config_path: Optional[Path] = None) -> HiveConfig:
         # Branch settings
         default_branch=branch_section.get("default_branch", "main"),
     )
+
+
+def get_default_branch(config_path: Optional[Path] = None) -> str:
+    """Get the default branch name for the repository.
+
+    Determines the default branch by:
+    1. Checking .hive/config.toml for default_branch setting
+    2. Falling back to git's remote HEAD (refs/remotes/origin/HEAD)
+    3. Falling back to 'main'
+
+    Args:
+        config_path: Optional path to config.toml. If None, uses .hive/config.toml.
+
+    Returns:
+        Branch name (e.g., 'main', 'master', 'develop')
+
+    Example:
+        branch = get_default_branch()
+        # Use branch for git operations
+    """
+    # First, try loading from config
+    config = load_config(config_path)
+    if config.default_branch:
+        return config.default_branch
+
+    # Second, try detecting from git remote HEAD
+    try:
+        result = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        # Output format: refs/remotes/origin/main
+        ref = result.stdout.strip()
+        if ref.startswith("refs/remotes/origin/"):
+            branch = ref.replace("refs/remotes/origin/", "")
+            if branch:
+                return branch
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        # Git command failed or timed out, fall through to default
+        pass
+
+    # Final fallback
+    return "main"
+
