@@ -53,6 +53,8 @@ def init_cmd():
         "workers": {
             "spawn_grace_period_seconds": 30,
             "max_parallel_workers": 1,
+            "poll_interval": 5,
+            "task_timeout": 3600,
         },
         "worktrees": {
             "base_dir": "worktrees",
@@ -60,6 +62,9 @@ def init_cmd():
         "agent": {
             "command": "claude-code",
             "shell": "bash",
+        },
+        "branch": {
+            "default_branch": "main",
         },
     }
 
