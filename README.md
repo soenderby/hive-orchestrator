@@ -188,6 +188,59 @@ hive task add "Fix discovered bug" --priority=1 --discovered-from=<parent-task-i
 hive task too-big <task-id>
 ```
 
+### `hive merge`
+
+Assist with manual merge resolution for conflicted tasks.
+
+```bash
+# Resolve conflicts for a task
+hive merge hive-abc
+
+# Resolve conflicts for specific worktree
+hive merge worker-1-hive-abc
+
+# Just cleanup after manual merge
+hive merge hive-abc --cleanup-only
+
+# Force cleanup even with uncommitted changes
+hive merge hive-abc --cleanup-only --force
+```
+
+**Workflow:**
+1. Shows conflict status and files
+2. Guides you through resolution
+3. After resolution, merges to main
+4. Cleans up worktree and branch
+5. Prompts to close task in Beads
+
+**Identifier formats:**
+- Task ID: `hive-abc`
+- Worker-task combo: `worker-1-hive-abc`
+- Full worktree path: `worktrees/worker-1-hive-abc`
+
+### `hive sync`
+
+Synchronize all worker branches with remote.
+
+```bash
+# Push and pull all task branches
+hive sync
+
+# Push only
+hive sync --push
+
+# Pull only
+hive sync --pull
+
+# Show what would be done
+hive sync --dry-run
+```
+
+**Use cases:**
+- Share work-in-progress branches with team
+- Pull updates from remote workers
+- Keep all task branches synchronized
+
 ## Configuration
 
 `.hive/config.toml`:
@@ -244,7 +297,20 @@ After a task completes successfully:
    - Human resolves conflict manually
    - Human merges and closes task
 
-**Manual merge resolution:**
+**Manual merge resolution (recommended):**
+
+```bash
+# Use the merge command for guided resolution
+hive merge hive-abc
+# Follow the prompts to resolve conflicts
+# After resolution, run again to complete merge
+hive merge hive-abc
+
+# Close task
+bd close hive-abc
+```
+
+**Manual merge resolution (alternative):**
 
 ```bash
 # Find conflicted task
@@ -259,14 +325,9 @@ git status
 git add .
 git commit
 
-# Merge to main
-git checkout main
-git merge task-hive-abc
-git branch -d task-hive-abc
-
-# Clean up worktree
+# Use merge command to complete cleanup
 cd ../..
-git worktree remove worktrees/worker-1-hive-abc
+hive merge hive-abc
 
 # Close task
 bd close hive-abc
@@ -456,23 +517,23 @@ hive status --json | jq '.workers'
 hive status
 # Output: Task hive-abc blocked (merge conflict)
 
-# 2. Navigate to worktree
-cd worktrees/worker-1-hive-abc
+# 2. Use merge command (shows conflict status)
+hive merge hive-abc
+# Output: Shows conflicted files and next steps
 
-# 3. Resolve manually
+# 3. Navigate to worktree and resolve
+cd worktrees/worker-1-hive-abc
 git status
 vim conflicted-file.py
 git add conflicted-file.py
 git commit
 
-# 4. Merge
-git checkout main
-git merge task-hive-abc
-git branch -d task-hive-abc
-
-# 5. Cleanup
+# 4. Complete the merge
 cd ../..
-git worktree remove worktrees/worker-1-hive-abc
+hive merge hive-abc
+# Automatically merges to main, cleans up worktree
+
+# 5. Close task
 bd close hive-abc
 ```
 
