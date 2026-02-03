@@ -882,11 +882,11 @@ hive work --dry-run            # Show what would execute
 hive status                    # Show workers, tasks, progress
 hive logs <worker>             # View worker's session log
 
-# Task management (thin wrappers around bd)
-hive task list                 # bd list
-hive task show <id>            # bd show <id>
-hive task add "description"    # bd create (for discovered work)
-hive task too-big <id>         # Mark task for decomposition
+# Task management (use bd commands directly)
+bd list                        # List tasks
+bd show <id>                   # Show task details
+bd create --title="..."        # Create task (for discovered work)
+bd update <id> --status=too_big  # Mark task for decomposition
 
 # Git operations
 hive merge <worker>            # Merge worker's branch to main
@@ -1156,7 +1156,7 @@ $ hive work
 [worker-1] Task marked as too big
 [worker-1] Cleaning up worktree
 
-$ hive task show hv-xyz
+$ bd show hv-xyz
 ID: hv-xyz
 Title: Implement payment system
 Status: too_big
@@ -1213,7 +1213,7 @@ $ hive work
 [worker-1] Cleaning up worktree: worktrees/worker-1-hv-xyz
 [worker-1] --- Iteration complete ---
 
-$ hive task show hv-xyz
+$ bd show hv-xyz
 ID: hv-xyz
 Title: Add feature
 Status: failed
@@ -1243,7 +1243,7 @@ Notes: "agent_spawn_failed: no activity within 30s"
 **Goal:** Full task lifecycle
 
 **Deliverables:**
-- [ ] `hive task` commands wrapping `bd`
+- [x] ~~`hive task` commands wrapping `bd`~~ (removed - use `bd` directly)
 - [ ] Atomic claim semantics
 - [ ] Dependency tracking integration
 - [ ] `too-big` workflow
