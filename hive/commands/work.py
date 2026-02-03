@@ -41,6 +41,28 @@ def log(worker_id: str, message: str):
     click.echo(f"[{timestamp}] [{worker_id}] {message}")
 
 
+def fail_task_with_recovery(task_id: str, worker_id: str, failure_type: str, error_details: str, recovery_hint: str):
+    """Mark a task as failed with actionable recovery information.
+
+    Args:
+        task_id: The task ID
+        worker_id: The worker ID
+        failure_type: Type of failure (e.g., "worktree_creation", "spawn_failure", "timeout")
+        error_details: Detailed error message
+        recovery_hint: Actionable hint for recovery
+    """
+    notes = f"""Failure: {failure_type}
+Error: {error_details}
+Recovery: {recovery_hint}
+Worker: {worker_id}"""
+
+    run_command(
+        ["bd", "update", task_id, "--status", "failed", "--notes", notes],
+        check=False,
+    )
+    log(worker_id, f"Task marked as failed: {failure_type}")
+
+
 def get_next_task() -> Optional[dict]:
     """Get the next ready task from Beads.
 
@@ -288,14 +310,18 @@ def ralph_loop_iteration(
     try:
         # Remove stale worktree if exists (from prior crash)
         if manager.worktree_exists(worker_id, task_id):
+            log(worker_id, "Removing stale worktree from previous run")
             manager.remove_worktree(worker_id, task_id, force=True)
 
         worktree_path = manager.create_worktree(worker_id, task_id, base_branch="main")
     except Exception as e:
         log(worker_id, f"ERROR: Failed to create worktree: {e}")
-        run_command(
-            ["bd", "update", task_id, "--status", "failed", "--notes", f"Worktree creation failed: {e}"],
-            check=False,
+        fail_task_with_recovery(
+            task_id=task_id,
+            worker_id=worker_id,
+            failure_type="worktree_creation",
+            error_details=str(e),
+            recovery_hint="Check git state with 'git worktree list'. Remove stale worktrees with 'git worktree remove --force <path>'."
         )
         return True  # Continue loop
 
@@ -314,9 +340,12 @@ def ralph_loop_iteration(
         )
     except Exception as e:
         log(worker_id, f"ERROR: Failed to generate context: {e}")
-        run_command(
-            ["bd", "update", task_id, "--status", "failed", "--notes", f"Context generation failed: {e}"],
-            check=False,
+        fail_task_with_recovery(
+            task_id=task_id,
+            worker_id=worker_id,
+            failure_type="context_generation",
+            error_details=str(e),
+            recovery_hint="Check task details with 'bd show {}'. Verify .hive/plan.md exists and is readable.".format(task_id)
         )
         manager.remove_worktree(worker_id, task_id, force=True)
         return True  # Continue loop
@@ -331,15 +360,40 @@ def ralph_loop_iteration(
     kill_tmux_session(tmux_session)
 
     # Create new tmux session with agent
-    run_command(
+    tmux_create_result = run_command(
         ["tmux", "new-session", "-d", "-s", tmux_session, "-c", str(worktree_path)],
         check=False,
     )
 
-    run_command(
+    if tmux_create_result.returncode != 0:
+        log(worker_id, f"ERROR: Failed to create tmux session: {tmux_create_result.stderr}")
+        fail_task_with_recovery(
+            task_id=task_id,
+            worker_id=worker_id,
+            failure_type="tmux_session_creation",
+            error_details=f"Failed to create tmux session '{tmux_session}': {tmux_create_result.stderr}",
+            recovery_hint="Verify tmux is installed: 'which tmux'. Check tmux server: 'tmux list-sessions'. Try manually: 'tmux new -s test'."
+        )
+        manager.remove_worktree(worker_id, task_id, force=True)
+        return True  # Continue loop
+
+    tmux_send_result = run_command(
         ["tmux", "send-keys", "-t", tmux_session, agent_command, "Enter"],
         check=False,
     )
+
+    if tmux_send_result.returncode != 0:
+        log(worker_id, f"ERROR: Failed to send command to tmux: {tmux_send_result.stderr}")
+        kill_tmux_session(tmux_session)
+        fail_task_with_recovery(
+            task_id=task_id,
+            worker_id=worker_id,
+            failure_type="tmux_command_send",
+            error_details=f"Failed to send command to tmux session: {tmux_send_result.stderr}",
+            recovery_hint="Session may have died immediately. Check tmux logs. Verify agent command is correct: '{}'.".format(agent_command)
+        )
+        manager.remove_worktree(worker_id, task_id, force=True)
+        return True  # Continue loop
 
     # Register worker in registry
     register_worker(
@@ -373,12 +427,21 @@ def ralph_loop_iteration(
 
     if not has_activity:
         log(worker_id, f"SPAWN FAILED: No activity detected within grace period")
-        run_command(
-            ["bd", "update", task_id, "--status", "failed", "--notes", f"agent_spawn_failed: no activity within {spawn_grace}s"],
-            check=False,
+
+        # Collect diagnostic info
+        session_exists = tmux_session_exists(tmux_session)
+        diagnostics = f"Session exists: {session_exists}, Grace period: {spawn_grace}s"
+
+        fail_task_with_recovery(
+            task_id=task_id,
+            worker_id=worker_id,
+            failure_type="agent_spawn_failure",
+            error_details=f"No activity detected within {spawn_grace}s. {diagnostics}",
+            recovery_hint="Verify agent is installed: 'which {}'. Test manually: 'tmux new -s test' then '{}'. Check agent logs for startup errors.".format(agent_command, agent_command)
         )
         kill_tmux_session(tmux_session)
         manager.remove_worktree(worker_id, task_id, force=True)
+        unregister_worker(worker_id)
         return True  # Continue loop
 
     # -------------------------------------------------
@@ -395,9 +458,12 @@ def ralph_loop_iteration(
         elapsed = time.time() - start_time
         if elapsed >= task_timeout:
             log(worker_id, f"TIMEOUT: Task exceeded {task_timeout}s")
-            run_command(
-                ["bd", "update", task_id, "--status", "failed", "--notes", f"Timeout after {task_timeout}s"],
-                check=False,
+            fail_task_with_recovery(
+                task_id=task_id,
+                worker_id=worker_id,
+                failure_type="timeout",
+                error_details=f"Task exceeded timeout of {task_timeout}s (elapsed: {int(elapsed)}s)",
+                recovery_hint="Task may be too large. Consider breaking it down with 'bd update {} --status too_big' or increase timeout with '--task-timeout <seconds>'.".format(task_id)
             )
             outcome = "timeout"
             break
@@ -407,9 +473,12 @@ def ralph_loop_iteration(
             log(worker_id, "Session died unexpectedly")
             current_status = get_task_status(task_id)
             if current_status == "in_progress":
-                run_command(
-                    ["bd", "update", task_id, "--status", "failed", "--notes", "Session crashed"],
-                    check=False,
+                fail_task_with_recovery(
+                    task_id=task_id,
+                    worker_id=worker_id,
+                    failure_type="agent_crash",
+                    error_details=f"Agent session '{tmux_session}' terminated unexpectedly",
+                    recovery_hint="Check worktree for partial work: 'cd worktrees/{}-{}'. Review agent logs. Consider re-running with more verbose logging.".format(worker_id, task_id)
                 )
                 outcome = "crashed"
             else:
@@ -459,8 +528,23 @@ def ralph_loop_iteration(
             manager.remove_worktree(worker_id, task_id, force=True)
         else:
             log(worker_id, "MERGE CONFLICT - requires human resolution")
+
+            resolution_steps = f"""Merge conflict detected. Worktree preserved at: {worktree_path}
+
+Resolution steps:
+1. cd {worktree_path}
+2. git status  # Review conflicts
+3. Edit conflicted files
+4. git add <resolved-files>
+5. git commit
+6. git checkout main && git merge {branch}
+7. git worktree remove {worktree_path}
+8. bd close {task_id}
+
+Or use: git merge --abort to cancel"""
+
             run_command(
-                ["bd", "update", task_id, "--status", "blocked", "--notes", f"Merge conflict, needs human resolution. Worktree: {worktree_path}"],
+                ["bd", "update", task_id, "--status", "blocked", "--notes", resolution_steps],
                 check=False,
             )
             # Keep worktree for human to resolve
@@ -504,20 +588,30 @@ def run_worker(
 
     log(worker_id, "Starting ralph loop")
 
-    while True:
-        should_continue = ralph_loop_iteration(
-            worker_id=worker_id,
-            manager=manager,
-            poll_interval=poll_interval,
-            task_timeout=task_timeout,
-            spawn_grace=spawn_grace,
-            agent_command=agent_command,
-        )
+    try:
+        while True:
+            should_continue = ralph_loop_iteration(
+                worker_id=worker_id,
+                manager=manager,
+                poll_interval=poll_interval,
+                task_timeout=task_timeout,
+                spawn_grace=spawn_grace,
+                agent_command=agent_command,
+            )
 
-        if not should_continue:
-            break
+            if not should_continue:
+                break
 
-    log(worker_id, "Ralph loop completed")
+        log(worker_id, "Ralph loop completed")
+    except KeyboardInterrupt:
+        log(worker_id, "Interrupted by user (Ctrl+C)")
+        unregister_worker(worker_id)
+    except Exception as e:
+        log(worker_id, f"FATAL ERROR: Worker crashed: {e}")
+        click.echo(f"Worker {worker_id} traceback:")
+        import traceback
+        traceback.print_exc()
+        unregister_worker(worker_id)
 
 
 @click.command(name="work")
@@ -550,6 +644,13 @@ def work_cmd(worker_id, poll_interval, task_timeout, spawn_grace, agent_command,
     if not hive_dir.exists():
         click.echo("✗ Hive not initialized (.hive/ not found)")
         click.echo("  Run 'hive init' first")
+        sys.exit(1)
+
+    # Check tmux is available
+    tmux_check = run_command(["which", "tmux"], check=False)
+    if tmux_check.returncode != 0:
+        click.echo("✗ tmux not found in PATH")
+        click.echo("  Install tmux: 'sudo apt install tmux' (Ubuntu/Debian) or 'brew install tmux' (macOS)")
         sys.exit(1)
 
     # Validate parallel count

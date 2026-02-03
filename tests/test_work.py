@@ -398,6 +398,21 @@ def test_ralph_loop_spawn_failure_detection(
     # Setup context generation
     mock_context.return_value = "context"
 
+    # Setup run_command to return success for tmux commands
+    def mock_run_side_effect(cmd, check=True, capture=True):
+        result = MagicMock()
+        if "tmux" in cmd:
+            result.returncode = 0  # tmux commands succeed
+            result.stdout = ""
+            result.stderr = ""
+        else:
+            result.returncode = 0  # bd commands also succeed
+            result.stdout = ""
+            result.stderr = ""
+        return result
+
+    mock_run.side_effect = mock_run_side_effect
+
     # Spawn grace period check - no activity detected
     mock_status.return_value = "in_progress"  # Status unchanged
     mock_activity.return_value = False  # No tmux activity
@@ -422,7 +437,8 @@ def test_ralph_loop_spawn_failure_detection(
 
     # Verify that the task was marked as failed
     assert any("failed" in str(call) for call in failed_update_calls), "Task should be marked as failed"
-    assert any("agent_spawn_failed" in str(call) for call in failed_update_calls), "Should include agent_spawn_failed reason"
+    # Check for the new failure type format (agent_spawn_failure)
+    assert any("agent_spawn" in str(call) for call in failed_update_calls), "Should include agent spawn failure reason"
 
 
 # Note: More complex integration tests for ralph_loop_iteration are omitted
