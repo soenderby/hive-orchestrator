@@ -491,7 +491,7 @@ def ralph_loop_iteration(
         # Check Beads for status change
         current_status = get_task_status(task_id)
 
-        if current_status == "done":
+        if current_status == "closed":
             log(worker_id, "Task completed successfully")
             outcome = "done"
             break
