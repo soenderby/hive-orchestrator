@@ -168,25 +168,27 @@ hive status --json
 - Task statistics by status (open, in_progress, done, blocked, too_big, failed)
 - Overall progress percentage
 
-### `hive task`
+### Task Management
 
-Manage tasks (thin wrappers around Beads commands).
+Use Beads (`bd`) commands directly for task management:
 
 ```bash
 # List tasks
-hive task list
-hive task list --status=open
-hive task list --json
+bd list
+bd list --status=open
+bd list --json
 
 # Show task details
-hive task show <task-id>
+bd show <task-id>
 
 # Add discovered work
-hive task add "Fix discovered bug" --priority=1 --discovered-from=<parent-task-id>
+bd create --title="Fix discovered bug" --priority=1 --deps=discovered-from:<parent-task-id>
 
 # Mark task as too big
-hive task too-big <task-id>
+bd update <task-id> --status=too_big
 ```
+
+For full Beads documentation, see: https://github.com/beadsx/beads
 
 ### `hive merge`
 
@@ -495,13 +497,7 @@ Agents can discover additional work during execution.
 
 ```bash
 # Agent discovers a bug while working on feature
-bd create --title="Fix discovered validation bug" --discovered-from=hive-abc
-```
-
-**From hive task command:**
-
-```bash
-hive task add "Refactor auth module" --discovered-from=hive-abc
+bd create --title="Fix discovered validation bug" --deps=discovered-from:hive-abc
 ```
 
 This links the new work to the parent task for traceability.
