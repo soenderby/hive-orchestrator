@@ -4,9 +4,12 @@ Implements the Ralph loop: claim task, create worktree, spawn agent, poll for co
 """
 
 import json
+import multiprocessing
+import os
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -159,6 +162,87 @@ def merge_branch(branch: str) -> bool:
     return True
 
 
+def register_worker(worker_id: str, pid: int, task_id: str, tmux_session: str, worktree: str):
+    """Register a worker in the worker registry."""
+    workers_path = Path(".hive/workers.json")
+
+    # Read current registry
+    try:
+        with open(workers_path) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {"workers": [], "last_updated": None}
+
+    # Add or update worker
+    workers = data.get("workers", [])
+    worker_entry = {
+        "id": worker_id,
+        "pid": pid,
+        "tmux_session": tmux_session,
+        "worktree": worktree,
+        "current_task": task_id,
+        "started_at": datetime.now().isoformat(),
+        "last_activity": datetime.now().isoformat(),
+    }
+
+    # Remove existing entry for this worker if present
+    workers = [w for w in workers if w.get("id") != worker_id]
+    workers.append(worker_entry)
+
+    data["workers"] = workers
+    data["last_updated"] = datetime.now().isoformat()
+
+    # Write back
+    with open(workers_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def unregister_worker(worker_id: str):
+    """Unregister a worker from the worker registry."""
+    workers_path = Path(".hive/workers.json")
+
+    try:
+        with open(workers_path) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return
+
+    # Remove worker
+    workers = data.get("workers", [])
+    workers = [w for w in workers if w.get("id") != worker_id]
+
+    data["workers"] = workers
+    data["last_updated"] = datetime.now().isoformat()
+
+    # Write back
+    with open(workers_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def update_worker_activity(worker_id: str):
+    """Update the last activity timestamp for a worker."""
+    workers_path = Path(".hive/workers.json")
+
+    try:
+        with open(workers_path) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return
+
+    # Update worker activity
+    workers = data.get("workers", [])
+    for worker in workers:
+        if worker.get("id") == worker_id:
+            worker["last_activity"] = datetime.now().isoformat()
+            break
+
+    data["last_updated"] = datetime.now().isoformat()
+
+    # Write back
+    with open(workers_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 def ralph_loop_iteration(
     worker_id: str,
     manager: WorktreeManager,
@@ -257,6 +341,15 @@ def ralph_loop_iteration(
         check=False,
     )
 
+    # Register worker in registry
+    register_worker(
+        worker_id=worker_id,
+        pid=os.getpid(),
+        task_id=task_id,
+        tmux_session=tmux_session,
+        worktree=str(worktree_path),
+    )
+
     # -------------------------------------------------
     # 6. SPAWN GRACE PERIOD CHECK
     # -------------------------------------------------
@@ -323,6 +416,9 @@ def ralph_loop_iteration(
                 outcome = current_status
             break
 
+        # Update worker activity
+        update_worker_activity(worker_id)
+
         # Check Beads for status change
         current_status = get_task_status(task_id)
 
@@ -385,51 +481,27 @@ def ralph_loop_iteration(
         log(worker_id, f"Unexpected outcome: {outcome}")
         manager.remove_worktree(worker_id, task_id, force=True)
 
+    # Unregister worker after task completion
+    unregister_worker(worker_id)
+
     log(worker_id, "--- Iteration complete ---")
     click.echo("")
 
     return True  # Continue loop
 
 
-@click.command(name="work")
-@click.option("--worker-id", default=None, help="Worker ID (default: worker-<pid>)")
-@click.option("--poll-interval", default=5, help="Poll interval in seconds (default: 5)")
-@click.option("--task-timeout", default=3600, help="Task timeout in seconds (default: 3600)")
-@click.option("--spawn-grace", default=30, help="Spawn grace period in seconds (default: 30)")
-@click.option("--agent-command", default="claude-code", help="Agent command to run (default: claude-code)")
-@click.option("--task", default=None, help="Run specific task only (not implemented yet)")
-@click.option("--dry-run", is_flag=True, help="Show what would execute (not implemented yet)")
-def work_cmd(worker_id, poll_interval, task_timeout, spawn_grace, agent_command, task, dry_run):
-    """Execute tasks using Ralph loop orchestration.
-
-    The Ralph loop runs continuously, claiming tasks from Beads one at a time,
-    spawning an agent in a fresh worktree, and polling for completion.
-    """
-    import os
-
-    # Check prerequisites
+def run_worker(
+    worker_num: int,
+    poll_interval: int,
+    task_timeout: int,
+    spawn_grace: int,
+    agent_command: str,
+):
+    """Run a single worker in a separate process."""
+    worker_id = f"worker-{worker_num}"
     repo_root = Path.cwd()
-    beads_dir = repo_root / ".beads"
-    hive_dir = repo_root / ".hive"
-
-    if not beads_dir.exists():
-        click.echo("✗ Beads not initialized (.beads/ not found)")
-        click.echo("  Run 'bd init' first")
-        sys.exit(1)
-
-    if not hive_dir.exists():
-        click.echo("✗ Hive not initialized (.hive/ not found)")
-        click.echo("  Run 'hive init' first")
-        sys.exit(1)
-
-    # Generate worker ID if not provided
-    if not worker_id:
-        worker_id = f"worker-{os.getpid()}"
-
-    # Initialize worktree manager
     manager = WorktreeManager(repo_root=repo_root)
 
-    # Start the Ralph loop
     log(worker_id, "Starting ralph loop")
 
     while True:
@@ -446,3 +518,86 @@ def work_cmd(worker_id, poll_interval, task_timeout, spawn_grace, agent_command,
             break
 
     log(worker_id, "Ralph loop completed")
+
+
+@click.command(name="work")
+@click.option("--worker-id", default=None, help="Worker ID (default: worker-<pid>)")
+@click.option("--poll-interval", default=5, help="Poll interval in seconds (default: 5)")
+@click.option("--task-timeout", default=3600, help="Task timeout in seconds (default: 3600)")
+@click.option("--spawn-grace", default=30, help="Spawn grace period in seconds (default: 30)")
+@click.option("--agent-command", default="claude-code", help="Agent command to run (default: claude-code)")
+@click.option("--parallel", default=1, type=int, help="Number of parallel workers (default: 1)")
+@click.option("--task", default=None, help="Run specific task only (not implemented yet)")
+@click.option("--dry-run", is_flag=True, help="Show what would execute (not implemented yet)")
+def work_cmd(worker_id, poll_interval, task_timeout, spawn_grace, agent_command, parallel, task, dry_run):
+    """Execute tasks using Ralph loop orchestration.
+
+    The Ralph loop runs continuously, claiming tasks from Beads one at a time,
+    spawning an agent in a fresh worktree, and polling for completion.
+
+    With --parallel N, spawns N independent workers that coordinate via atomic claims.
+    """
+    # Check prerequisites
+    repo_root = Path.cwd()
+    beads_dir = repo_root / ".beads"
+    hive_dir = repo_root / ".hive"
+
+    if not beads_dir.exists():
+        click.echo("✗ Beads not initialized (.beads/ not found)")
+        click.echo("  Run 'bd init' first")
+        sys.exit(1)
+
+    if not hive_dir.exists():
+        click.echo("✗ Hive not initialized (.hive/ not found)")
+        click.echo("  Run 'hive init' first")
+        sys.exit(1)
+
+    # Validate parallel count
+    if parallel < 1:
+        click.echo("✗ --parallel must be >= 1")
+        sys.exit(1)
+
+    # If parallel execution requested, spawn worker processes
+    if parallel > 1:
+        click.echo(f"Starting {parallel} parallel workers...")
+
+        processes = []
+        for i in range(1, parallel + 1):
+            p = multiprocessing.Process(
+                target=run_worker,
+                args=(i, poll_interval, task_timeout, spawn_grace, agent_command),
+            )
+            p.start()
+            processes.append(p)
+            click.echo(f"[main] Started worker-{i} (PID: {p.pid})")
+
+        # Wait for all workers to complete
+        for p in processes:
+            p.join()
+
+        click.echo("[main] All workers completed")
+    else:
+        # Serial execution (single worker)
+        if not worker_id:
+            worker_id = f"worker-{os.getpid()}"
+
+        # Initialize worktree manager
+        manager = WorktreeManager(repo_root=repo_root)
+
+        # Start the Ralph loop
+        log(worker_id, "Starting ralph loop")
+
+        while True:
+            should_continue = ralph_loop_iteration(
+                worker_id=worker_id,
+                manager=manager,
+                poll_interval=poll_interval,
+                task_timeout=task_timeout,
+                spawn_grace=spawn_grace,
+                agent_command=agent_command,
+            )
+
+            if not should_continue:
+                break
+
+        log(worker_id, "Ralph loop completed")

@@ -18,6 +18,7 @@ from hive.commands.work import (
     log,
     merge_branch,
     ralph_loop_iteration,
+    work_cmd,
     tmux_session_exists,
 )
 
@@ -427,3 +428,165 @@ def test_ralph_loop_spawn_failure_detection(
 # Note: More complex integration tests for ralph_loop_iteration are omitted
 # to avoid test hangs. The unit tests above cover the core functionality.
 # Integration testing should be done manually or with a real test environment.
+
+
+def test_register_worker(tmp_path):
+    """Test registering a worker in the registry."""
+    from hive.commands.work import register_worker
+
+    # Create .hive directory
+    hive_dir = tmp_path / ".hive"
+    hive_dir.mkdir()
+
+    # Change to temp directory
+    import os
+    original_dir = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+
+        # Register a worker
+        register_worker(
+            worker_id="worker-1",
+            pid=12345,
+            task_id="task-abc",
+            tmux_session="hive-worker-1-task-abc",
+            worktree="worktrees/worker-1-task-abc"
+        )
+
+        # Check that workers.json was created
+        workers_path = hive_dir / "workers.json"
+        assert workers_path.exists()
+
+        # Read and verify contents
+        import json
+        with open(workers_path) as f:
+            data = json.load(f)
+
+        assert len(data["workers"]) == 1
+        worker = data["workers"][0]
+        assert worker["id"] == "worker-1"
+        assert worker["pid"] == 12345
+        assert worker["current_task"] == "task-abc"
+        assert worker["tmux_session"] == "hive-worker-1-task-abc"
+        assert worker["worktree"] == "worktrees/worker-1-task-abc"
+        assert "started_at" in worker
+        assert "last_activity" in worker
+    finally:
+        os.chdir(original_dir)
+
+
+def test_unregister_worker(tmp_path):
+    """Test unregistering a worker from the registry."""
+    from hive.commands.work import register_worker, unregister_worker
+
+    # Create .hive directory
+    hive_dir = tmp_path / ".hive"
+    hive_dir.mkdir()
+
+    # Change to temp directory
+    import os
+    original_dir = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+
+        # Register two workers
+        register_worker("worker-1", 12345, "task-abc", "session-1", "worktree-1")
+        register_worker("worker-2", 12346, "task-def", "session-2", "worktree-2")
+
+        # Unregister worker-1
+        unregister_worker("worker-1")
+
+        # Check that only worker-2 remains
+        import json
+        workers_path = hive_dir / "workers.json"
+        with open(workers_path) as f:
+            data = json.load(f)
+
+        assert len(data["workers"]) == 1
+        assert data["workers"][0]["id"] == "worker-2"
+    finally:
+        os.chdir(original_dir)
+
+
+def test_update_worker_activity(tmp_path):
+    """Test updating worker activity timestamp."""
+    from hive.commands.work import register_worker, update_worker_activity
+    import time
+
+    # Create .hive directory
+    hive_dir = tmp_path / ".hive"
+    hive_dir.mkdir()
+
+    # Change to temp directory
+    import os
+    original_dir = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+
+        # Register a worker
+        register_worker("worker-1", 12345, "task-abc", "session-1", "worktree-1")
+
+        # Get initial activity time
+        import json
+        workers_path = hive_dir / "workers.json"
+        with open(workers_path) as f:
+            data = json.load(f)
+        initial_activity = data["workers"][0]["last_activity"]
+
+        # Wait a bit and update activity
+        time.sleep(0.1)
+        update_worker_activity("worker-1")
+
+        # Check that activity time was updated
+        with open(workers_path) as f:
+            data = json.load(f)
+        new_activity = data["workers"][0]["last_activity"]
+
+        assert new_activity != initial_activity
+    finally:
+        os.chdir(original_dir)
+
+
+def test_work_cmd_with_parallel(tmp_path):
+    """Test work command with --parallel option."""
+    runner = CliRunner()
+    import os
+    original_dir = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        # Create .beads and .hive directories
+        (tmp_path / ".beads").mkdir()
+        (tmp_path / ".hive").mkdir()
+
+        # Mock the multiprocessing to avoid actually spawning processes
+        with patch("hive.commands.work.multiprocessing.Process") as mock_process:
+            mock_proc = MagicMock()
+            mock_proc.pid = 12345
+            mock_process.return_value = mock_proc
+
+            result = runner.invoke(work_cmd, ["--parallel", "2"])
+
+            # Should start 2 processes
+            assert mock_process.call_count == 2
+            assert "Starting 2 parallel workers" in result.output
+    finally:
+        os.chdir(original_dir)
+
+
+def test_work_cmd_parallel_validation(tmp_path):
+    """Test work command validates parallel count."""
+    runner = CliRunner()
+    import os
+    original_dir = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        # Create .beads and .hive directories
+        (tmp_path / ".beads").mkdir()
+        (tmp_path / ".hive").mkdir()
+
+        result = runner.invoke(work_cmd, ["--parallel", "0"])
+
+        assert result.exit_code == 1
+        assert "--parallel must be >= 1" in result.output
+    finally:
+        os.chdir(original_dir)
