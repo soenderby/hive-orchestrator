@@ -241,6 +241,52 @@ hive sync --dry-run
 - Pull updates from remote workers
 - Keep all task branches synchronized
 
+### `hive daemon`
+
+Monitor workers and detect stuck tasks in the background.
+
+```bash
+# Start daemon
+hive daemon start
+
+# Start with custom settings
+hive daemon start --check-interval 30 --stuck-threshold 600 --notify
+
+# Start in foreground (for debugging)
+hive daemon start --foreground
+
+# Check daemon status
+hive daemon status
+
+# Check status with JSON output
+hive daemon status --json
+
+# View daemon logs
+hive daemon logs
+
+# Follow logs (like tail -f)
+hive daemon logs --follow
+
+# Stop daemon
+hive daemon stop
+```
+
+**Features:**
+- Polls worker registry for stuck workers (no activity for threshold)
+- Logs stuck worker events to `.hive/daemon.log`
+- Optional desktop notifications on stuck workers
+- Runs in background, safe to close terminal
+
+**Options:**
+- `--check-interval` - How often to check (seconds, default: 60)
+- `--stuck-threshold` - No activity threshold (seconds, default: 300)
+- `--notify` - Enable desktop notifications (requires `notify-send`)
+
+**Use cases:**
+- Long-running parallel workers
+- Detect hung or crashed agents
+- Monitor overnight task execution
+
 ## Configuration
 
 `.hive/config.toml`:

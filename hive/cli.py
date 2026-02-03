@@ -1,7 +1,7 @@
 """Main CLI entry point for Hive."""
 
 import click
-from hive.commands import init, merge, plan, status, task, work
+from hive.commands import daemon, init, merge, plan, status, task, work
 
 
 @click.group()
@@ -11,6 +11,7 @@ def main():
     pass
 
 
+main.add_command(daemon.daemon_cmd)
 main.add_command(init.init_cmd)
 main.add_command(merge.merge_cmd)
 main.add_command(merge.sync_cmd)

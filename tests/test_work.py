@@ -372,9 +372,13 @@ def test_ralph_loop_claim_race_condition(mock_manager, mock_sleep, mock_claim, m
 @patch("hive.commands.work.run_command")
 @patch("hive.commands.work.time.sleep")
 @patch("hive.commands.work.generate_claude_context_from_beads")
+@patch("hive.commands.work.register_worker")
+@patch("hive.commands.work.unregister_worker")
 @patch("hive.commands.work.WorktreeManager")
 def test_ralph_loop_spawn_failure_detection(
     mock_manager,
+    mock_unregister,
+    mock_register,
     mock_context,
     mock_sleep,
     mock_run,
