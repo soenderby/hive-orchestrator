@@ -16,6 +16,7 @@ from typing import Optional
 import click
 
 from hive.context import generate_claude_context_from_beads
+from hive.utils import locked_json_file
 from hive.worktree import WorktreeManager
 
 
@@ -188,81 +189,62 @@ def register_worker(worker_id: str, pid: int, task_id: str, tmux_session: str, w
     """Register a worker in the worker registry."""
     workers_path = Path(".hive/workers.json")
 
-    # Read current registry
-    try:
-        with open(workers_path) as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = {"workers": [], "last_updated": None}
+    # Read, modify, and write with file locking
+    with locked_json_file(
+        workers_path, "r+", default={"workers": [], "last_updated": None}
+    ) as data:
+        # Add or update worker
+        workers = data.get("workers", [])
+        worker_entry = {
+            "id": worker_id,
+            "pid": pid,
+            "tmux_session": tmux_session,
+            "worktree": worktree,
+            "current_task": task_id,
+            "started_at": datetime.now().isoformat(),
+            "last_activity": datetime.now().isoformat(),
+        }
 
-    # Add or update worker
-    workers = data.get("workers", [])
-    worker_entry = {
-        "id": worker_id,
-        "pid": pid,
-        "tmux_session": tmux_session,
-        "worktree": worktree,
-        "current_task": task_id,
-        "started_at": datetime.now().isoformat(),
-        "last_activity": datetime.now().isoformat(),
-    }
+        # Remove existing entry for this worker if present
+        workers = [w for w in workers if w.get("id") != worker_id]
+        workers.append(worker_entry)
 
-    # Remove existing entry for this worker if present
-    workers = [w for w in workers if w.get("id") != worker_id]
-    workers.append(worker_entry)
-
-    data["workers"] = workers
-    data["last_updated"] = datetime.now().isoformat()
-
-    # Write back
-    with open(workers_path, "w") as f:
-        json.dump(data, f, indent=2)
+        data["workers"] = workers
+        data["last_updated"] = datetime.now().isoformat()
 
 
 def unregister_worker(worker_id: str):
     """Unregister a worker from the worker registry."""
     workers_path = Path(".hive/workers.json")
 
-    try:
-        with open(workers_path) as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return
+    # Read, modify, and write with file locking
+    with locked_json_file(
+        workers_path, "r+", default={"workers": [], "last_updated": None}
+    ) as data:
+        # Remove worker
+        workers = data.get("workers", [])
+        workers = [w for w in workers if w.get("id") != worker_id]
 
-    # Remove worker
-    workers = data.get("workers", [])
-    workers = [w for w in workers if w.get("id") != worker_id]
-
-    data["workers"] = workers
-    data["last_updated"] = datetime.now().isoformat()
-
-    # Write back
-    with open(workers_path, "w") as f:
-        json.dump(data, f, indent=2)
+        data["workers"] = workers
+        data["last_updated"] = datetime.now().isoformat()
 
 
 def update_worker_activity(worker_id: str):
     """Update the last activity timestamp for a worker."""
     workers_path = Path(".hive/workers.json")
 
-    try:
-        with open(workers_path) as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return
+    # Read, modify, and write with file locking
+    with locked_json_file(
+        workers_path, "r+", default={"workers": [], "last_updated": None}
+    ) as data:
+        # Update worker activity
+        workers = data.get("workers", [])
+        for worker in workers:
+            if worker.get("id") == worker_id:
+                worker["last_activity"] = datetime.now().isoformat()
+                break
 
-    # Update worker activity
-    workers = data.get("workers", [])
-    for worker in workers:
-        if worker.get("id") == worker_id:
-            worker["last_activity"] = datetime.now().isoformat()
-            break
-
-    data["last_updated"] = datetime.now().isoformat()
-
-    # Write back
-    with open(workers_path, "w") as f:
-        json.dump(data, f, indent=2)
+        data["last_updated"] = datetime.now().isoformat()
 
 
 def ralph_loop_iteration(
