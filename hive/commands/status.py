@@ -54,7 +54,7 @@ def status_cmd(output_json):
     task_counts = {
         "open": 0,
         "in_progress": 0,
-        "done": 0,
+        "closed": 0,
         "blocked": 0,
         "too_big": 0,
         "failed": 0,
@@ -112,7 +112,7 @@ def status_cmd(output_json):
     click.echo(f"  Total: {len(all_tasks)}")
     click.echo(f"  Open: {task_counts['open']}")
     click.echo(f"  In Progress: {task_counts['in_progress']}")
-    click.echo(f"  Done: {task_counts['done']}")
+    click.echo(f"  Closed: {task_counts['closed']}")
     click.echo(f"  Blocked: {task_counts['blocked']}")
     click.echo(f"  Too Big: {task_counts['too_big']}")
     click.echo(f"  Failed: {task_counts['failed']}")
@@ -121,7 +121,7 @@ def status_cmd(output_json):
     # Progress summary
     total = len(all_tasks)
     if total > 0:
-        done_count = task_counts["done"]
+        done_count = task_counts["closed"]
         progress = (done_count / total) * 100
         click.echo(f"Overall Progress: {done_count}/{total} ({progress:.1f}%)")
     else:
