@@ -15,6 +15,7 @@ from typing import Optional
 
 import click
 
+from hive.config import load_config
 from hive.context import generate_claude_context_from_beads
 from hive.utils import locked_json_file
 from hive.worktree import WorktreeManager
@@ -598,10 +599,10 @@ def run_worker(
 
 @click.command(name="work")
 @click.option("--worker-id", default=None, help="Worker ID (default: worker-<pid>)")
-@click.option("--poll-interval", default=5, help="Poll interval in seconds (default: 5)")
-@click.option("--task-timeout", default=3600, help="Task timeout in seconds (default: 3600)")
-@click.option("--spawn-grace", default=30, help="Spawn grace period in seconds (default: 30)")
-@click.option("--agent-command", default="claude-code", help="Agent command to run (default: claude-code)")
+@click.option("--poll-interval", default=None, type=int, help="Poll interval in seconds (default: from config)")
+@click.option("--task-timeout", default=None, type=int, help="Task timeout in seconds (default: from config)")
+@click.option("--spawn-grace", default=None, type=int, help="Spawn grace period in seconds (default: from config)")
+@click.option("--agent-command", default=None, help="Agent command to run (default: from config)")
 @click.option("--parallel", default=1, type=int, help="Number of parallel workers (default: 1)")
 @click.option("--task", default=None, help="Run specific task only (not implemented yet)")
 @click.option("--dry-run", is_flag=True, help="Show what would execute (not implemented yet)")
@@ -627,6 +628,17 @@ def work_cmd(worker_id, poll_interval, task_timeout, spawn_grace, agent_command,
         click.echo("✗ Hive not initialized (.hive/ not found)")
         click.echo("  Run 'hive init' first")
         sys.exit(1)
+
+    # Load config and use as defaults for unset options
+    config = load_config()
+    if poll_interval is None:
+        poll_interval = config.poll_interval
+    if task_timeout is None:
+        task_timeout = config.task_timeout
+    if spawn_grace is None:
+        spawn_grace = config.spawn_grace_period_seconds
+    if agent_command is None:
+        agent_command = config.agent_command
 
     # Check tmux is available
     tmux_check = run_command(["which", "tmux"], check=False)
