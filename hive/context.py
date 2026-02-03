@@ -81,7 +81,7 @@ If you discover this task is too large for a single session:
    ```
 2. Update the task status:
    ```bash
-   bd update {task_id} --status=blocked
+   bd update {task_id} --status=too_big
    ```
 3. Create subtasks for the remaining work
 4. Notify the orchestrator that decomposition is needed
@@ -110,7 +110,7 @@ If you encounter an error you cannot resolve:
    ```
 2. Update the task status:
    ```bash
-   bd update {task_id} --status=blocked
+   bd update {task_id} --status=failed
    ```
 3. The failure will be reviewed by a human
 
