@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Optional, List
 import shutil
 
+from hive.config import get_default_branch
+
 
 class WorktreeError(Exception):
     """Base exception for worktree operations."""
@@ -28,7 +30,7 @@ class WorktreeManager:
         self,
         worker_id: str,
         task_id: str,
-        base_branch: str = "main",
+        base_branch: Optional[str] = None,
         force: bool = False,
     ) -> Path:
         """Create a new worktree for a task.
@@ -36,7 +38,7 @@ class WorktreeManager:
         Args:
             worker_id: Unique worker identifier (e.g., "worker-1")
             task_id: Task identifier from Beads (e.g., "hive-abc")
-            base_branch: Branch to create the worktree from (default: "main")
+            base_branch: Branch to create the worktree from (default: from config)
             force: If True, remove existing worktree first
 
         Returns:
@@ -45,6 +47,10 @@ class WorktreeManager:
         Raises:
             WorktreeError: If worktree creation fails
         """
+        # Use config default if not specified
+        if base_branch is None:
+            base_branch = get_default_branch()
+
         worktree_name = f"{worker_id}-{task_id}"
         worktree_path = self.worktrees_dir / worktree_name
         branch_name = f"task-{task_id}"

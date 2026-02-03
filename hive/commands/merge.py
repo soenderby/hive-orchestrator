@@ -7,6 +7,7 @@ from typing import Optional
 
 import click
 
+from hive.config import get_default_branch
 from hive.worktree import WorktreeManager
 
 
@@ -228,12 +229,13 @@ def merge_cmd(identifier: str, cleanup_only: bool, force: bool):
     click.echo("✓ No conflicts detected, ready to merge")
     click.echo()
 
-    # Checkout main
-    click.echo("Switching to main branch...")
+    # Checkout default branch
+    default_branch = get_default_branch()
+    click.echo(f"Switching to {default_branch} branch...")
     try:
-        run_command(["git", "checkout", "main"], cwd=repo_root)
+        run_command(["git", "checkout", default_branch], cwd=repo_root)
     except subprocess.CalledProcessError as e:
-        click.echo(f"✗ Failed to checkout main: {e.stderr}")
+        click.echo(f"✗ Failed to checkout {default_branch}: {e.stderr}")
         sys.exit(1)
 
     # Pull latest main

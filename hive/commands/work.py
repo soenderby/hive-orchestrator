@@ -15,7 +15,7 @@ from typing import Optional
 
 import click
 
-from hive.config import load_config
+from hive.config import get_default_branch, load_config
 from hive.context import generate_claude_context_from_beads
 from hive.utils import locked_json_file
 from hive.worktree import WorktreeManager
@@ -171,8 +171,9 @@ def check_tmux_activity(session_name: str) -> bool:
 
 def merge_branch(branch: str) -> bool:
     """Merge a branch to main. Returns True if successful, False on conflict."""
-    # First checkout main
-    result = run_command(["git", "checkout", "main"], check=False)
+    # First checkout default branch
+    default_branch = get_default_branch()
+    result = run_command(["git", "checkout", default_branch], check=False)
     if result.returncode != 0:
         return False
 
@@ -296,7 +297,9 @@ def ralph_loop_iteration(
             log(worker_id, "Removing stale worktree from previous run")
             manager.remove_worktree(worker_id, task_id, force=True)
 
-        worktree_path = manager.create_worktree(worker_id, task_id, base_branch="main")
+        worktree_path = manager.create_worktree(
+            worker_id, task_id, base_branch=get_default_branch()
+        )
     except Exception as e:
         log(worker_id, f"ERROR: Failed to create worktree: {e}")
         fail_task_with_recovery(
