@@ -9,6 +9,8 @@ from pathlib import Path
 
 import click
 
+from hive.utils import locked_json_file
+
 
 @click.command(name="status")
 @click.option("--json", "output_json", is_flag=True, help="Output in JSON format")
@@ -29,14 +31,11 @@ def status_cmd(output_json):
         click.echo("  Run 'hive init' first")
         return
 
-    # Read worker registry
-    try:
-        with open(workers_path) as f:
-            worker_data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        worker_data = {"workers": [], "last_updated": None}
-
-    workers = worker_data.get("workers", [])
+    # Read worker registry with file locking
+    with locked_json_file(
+        workers_path, "r", default={"workers": [], "last_updated": None}
+    ) as worker_data:
+        workers = worker_data.get("workers", [])
 
     # Get task statistics from beads
     try:

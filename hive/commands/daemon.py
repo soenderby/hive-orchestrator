@@ -12,6 +12,8 @@ from typing import Optional
 
 import click
 
+from hive.utils import locked_json_file
+
 
 DAEMON_PID_FILE = ".hive/daemon.pid"
 DAEMON_LOG_FILE = ".hive/daemon.log"
@@ -74,12 +76,8 @@ def get_workers() -> list[dict]:
     if not workers_path.exists():
         return []
 
-    try:
-        with open(workers_path) as f:
-            data = json.load(f)
+    with locked_json_file(workers_path, "r", default={"workers": []}) as data:
         return data.get("workers", [])
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
 
 
 def check_stuck_workers(stuck_threshold: int) -> list[dict]:
