@@ -60,7 +60,7 @@ def plan_cmd(goal, show, approve, continue_task):
 
             if not tasks:
                 click.echo("✗ No tasks marked as too_big")
-                click.echo("  Use 'bd update <id> --status too_big' or 'hive task too-big <id>' first")
+                click.echo("  Use 'bd update <id> --status too_big' first")
                 sys.exit(1)
 
             # Get the most recent too_big task
