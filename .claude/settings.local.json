@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bd list:*)",
+      "Bash(bd create:*)",
+      "Bash(bd dep add:*)",
+      "Bash(bd stats:*)",
+      "Bash(bd ready)",
+      "Bash(bd sync:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(bd show:*)",
+      "Bash(bd update:*)",
+      "Bash(pip install:*)",
+      "Bash(hive --help:*)",
+      "Bash(hive init:*)",
+      "Bash(pytest:*)",
+      "Bash(test:*)",
+      "Bash(bd close:*)",
+      "Bash(hive plan --help:*)",
+      "Bash(hive plan:*)",
+      "Bash(hive work --help:*)",
+      "Bash(bd:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m hive.cli:*)"
+    ]
+  }
+}
