@@ -8,6 +8,12 @@ Provide optional support to help users review and improve plan documents using t
 ## Background
 The Rule of Five describes five review passes for LLM outputs: Draft (shape/coverage), Correctness, Clarity, Edge Cases, Excellence. We want to help users apply this workflow to plan documents.
 
+## MVP Definition
+- `hive review` opens a tmux session for a structured review conversation.
+- The agent produces a pass-by-pass review report and offers to draft revisions on request.
+- The review report is saved to `<plan_path>.review.md`.
+- The plan document includes a phase tag (e.g., Draft, Reviewed, Ready).
+
 ## Non-Goals
 - Enforcing review as a mandatory gate
 - Automatically running breakdown as part of review
@@ -24,21 +30,40 @@ Behavior:
 - The agent produces a structured **review report** with concrete feedback and questions.
 - The agent explicitly offers to draft a revised plan, but only does so on user request.
 - The review report is saved to `<plan_path>.review.md`.
+- The agent suggests updating the plan phase tag when the plan is reviewed.
 
 Notes:
 - The intent is to create a conversation, not an automated rewrite.
 - Optional `--dry-run` prints the prompt that would be sent, without invoking the agent.
+
+## Plan Phase Tag (Decision)
+- The phase tag should be placed immediately under the title as a blockquote.
+- Example:
+  - `> Phase: Draft`
+  - `> Phase: Reviewed`
+  - `> Phase: Ready`
+- Review output should call out phase changes explicitly (e.g., “recommend moving to Reviewed”).
+
+## Happy Path Example
+1. User runs: `hive review plans/my-plan.md`
+2. Hive opens a tmux session in the plan directory and provides `REVIEW.md` (prompt + plan).
+3. Agent writes a structured report to `plans/my-plan.md.review.md`.
+4. User reads report and asks follow-up questions in the session.
+5. If requested, agent drafts a revised plan.
+6. User decides what changes to apply.
+7. User updates the plan’s phase tag.
 
 ## Prompt Template Strategy
 - Store default prompt at `hive/prompts/review-rule-of-five.md`.
 - The prompt should:
   - Explain the Rule of Five.
   - Require a structured report with pass-by-pass headings.
-  - Require concrete, exhaustive improvement suggestions (not just “top 5”).
+  - Require a complete list of improvements found in each pass.
   - Encourage clarifying questions.
   - End with an explicit offer to draft a revised plan on request.
+  - Explicitly instruct the agent to write the report to `<plan_path>.review.md`.
 
-## Report Scaffold (Required Structure)
+## Report Scaffold (Required Headings)
 - Summary of Findings
 - Pass 1: Draft (Coverage & Structure)
 - Pass 2: Correctness (Facts & Logic)
@@ -47,11 +72,12 @@ Notes:
 - Pass 5: Excellence (Polish & Professionalism)
 - Offer to Apply Changes (explicit invitation)
 
-## Conversation Model
+## Conversation and File Handling
 - Spawn agent in tmux (consistent with `hive work`).
+- Session working directory should be the plan’s directory.
 - Provide prompt + plan content in a file (e.g., `REVIEW.md`).
-- The report is written to `<plan_path>.review.md`.
-- The user can continue the conversation to refine or request a rewritten plan.
+- Agent writes report to `<plan_path>.review.md`.
+- If the report cannot be written, instruct the user to copy/paste from the session.
 
 ## Output / Storage
 - Save the review report to `<plan_path>.review.md` (alongside the plan).
@@ -71,6 +97,11 @@ Notes:
 - Review quality depends on agent skill.
 - Conversational workflow is less deterministic; harder to test.
 - Users might expect an edited plan rather than feedback.
+
+## Edge Cases
+- tmux not available: fail fast with guidance to install it.
+- plan path not readable or not writable: validate and warn.
+- report not written: provide fallback instructions.
 
 ## Future Work (Not in MVP)
 - One-shot `--report-only` mode
